@@ -65,6 +65,7 @@ const USERS_FILE = 'users.json';
 const STATS_FILE = 'stats.json';
 const EVENTS_FILE = 'events.json';
 const ACTIVITIES_FILE = 'activities.json';
+const LIBRARY_FILE = 'library.json';
 
 function loadData() {
     try {
@@ -88,6 +89,9 @@ function loadData() {
         if (fs.existsSync(ACTIVITIES_FILE)) {
             userActivities = JSON.parse(fs.readFileSync(ACTIVITIES_FILE, 'utf8'));
         }
+        if (fs.existsSync(LIBRARY_FILE)) {
+            libraryFiles = JSON.parse(fs.readFileSync(LIBRARY_FILE, 'utf8'));
+        }
     } catch (err) {
         console.log('Không thể đọc file dữ liệu:', err);
     }
@@ -109,11 +113,16 @@ function saveActivities() {
     fs.writeFileSync(ACTIVITIES_FILE, JSON.stringify(userActivities, null, 2));
 }
 
+function saveLibrary() {
+    fs.writeFileSync(LIBRARY_FILE, JSON.stringify(libraryFiles, null, 2));
+}
+
 // ========== DỮ LIỆU ==========
 let users = [];
 let userStats = {};
 let userEvents = {};
 let userActivities = {};
+let libraryFiles = [];
 
 const initAdmin = async () => {
     const hashedPassword = await bcrypt.hash('admin123', 10);
@@ -492,18 +501,7 @@ app.delete('/api/admin/users/:userId', authenticateToken, (req, res) => {
     res.json({ success: true });
 });
 
-// ========== API THƯ VIỆN (LIBRARY) ==========
-const LIBRARY_FILE = 'library.json';
-let libraryFiles = [];
-
-if (fs.existsSync(LIBRARY_FILE)) {
-    libraryFiles = JSON.parse(fs.readFileSync(LIBRARY_FILE, 'utf8'));
-}
-
-function saveLibrary() {
-    fs.writeFileSync(LIBRARY_FILE, JSON.stringify(libraryFiles, null, 2));
-}
-
+// ========== API THƯ VIỆN (LIBRARY) - ĐÃ CẬP NHẬT GRADE VÀ SUBJECT ==========
 app.get('/api/library', authenticateToken, (req, res) => {
     res.json(libraryFiles);
 });
@@ -514,16 +512,34 @@ app.post('/api/library', authenticateToken, upload.single('file'), (req, res) =>
             return res.status(400).json({ error: 'Không có file được upload' });
         }
         
-        const { type } = req.body;
+        const { type, grade, subject } = req.body;
         const fileUrl = `https://milkcoffee-backend-production.up.railway.app/uploads/${req.file.filename}`;
-        
         const originalName = req.file.originalname;
+        const fileExt = path.extname(originalName).substring(1);
+        
+        // Màu sắc theo môn học
+        const subjectColors = {
+            toan: { color: '#1e88e5', color2: '#42a5f5' },
+            van: { color: '#8e24aa', color2: '#ab47bc' },
+            anh: { color: '#43a047', color2: '#66bb6a' },
+            ly: { color: '#fb8c00', color2: '#ffa726' },
+            hoa: { color: '#e53935', color2: '#ef5350' },
+            sinh: { color: '#00897b', color2: '#26a69a' },
+            su: { color: '#6d4c41', color2: '#8d6e63' },
+            dia: { color: '#546e7a', color2: '#78909c' }
+        };
+        const colors = subjectColors[subject] || { color: '#1565C0', color2: '#42a5f5' };
         
         const newFile = {
             id: Date.now().toString(),
             name: originalName,
             displayName: originalName,
             type: type,
+            grade: grade || '10',
+            subject: subject || 'toan',
+            fileType: fileExt,
+            color: colors.color,
+            color2: colors.color2,
             filePath: fileUrl,
             uploadedBy: req.user.username,
             uploadedAt: new Date().toISOString(),
@@ -576,5 +592,5 @@ app.listen(PORT, () => {
     console.log(`🔐 Đăng nhập: POST https://milkcoffee-backend-production.up.railway.app/api/auth/login`);
     console.log(`📝 Đăng ký: POST https://milkcoffee-backend-production.up.railway.app/api/auth/register`);
     console.log(`👤 Admin: admin / admin123`);
-    console.log(`💾 Dữ liệu được lưu trong file: ${USERS_FILE}, ${STATS_FILE}, ${EVENTS_FILE}, ${ACTIVITIES_FILE}`);
+    console.log(`💾 Dữ liệu được lưu trong file: ${USERS_FILE}, ${STATS_FILE}, ${EVENTS_FILE}, ${ACTIVITIES_FILE}, ${LIBRARY_FILE}`);
 });
