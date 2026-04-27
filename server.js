@@ -34,11 +34,8 @@ function removeAccents(str) {
         result = result.replace(regex, unaccented[i]);
     }
     
-    // Thay thế khoảng trắng và ký tự đặc biệt bằng dấu gạch dưới
     result = result.replace(/[^a-zA-Z0-9._-]/g, '_');
-    // Thay thế nhiều dấu gạch dưới liên tiếp bằng một dấu
     result = result.replace(/_+/g, '_');
-    // Xóa dấu gạch dưới ở đầu và cuối
     result = result.replace(/^_|_$/g, '');
     
     return result;
@@ -52,17 +49,15 @@ const storage = multer.diskStorage({
     filename: (req, file, cb) => {
         const ext = path.extname(file.originalname);
         const nameWithoutExt = path.basename(file.originalname, ext);
-        // Loại bỏ dấu tiếng Việt và thay thế ký tự đặc biệt
         const cleanName = removeAccents(nameWithoutExt);
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        // Tên file: timestamp_tenKhongDau.duoi
         cb(null, uniqueSuffix + '_' + cleanName + ext);
     }
 });
 
 const upload = multer({ 
     storage: storage,
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB cho file
+    limits: { fileSize: 10 * 1024 * 1024 }
 });
 
 // ========== FILE LƯU TRỮ DỮ LIỆU ==========
@@ -71,7 +66,6 @@ const STATS_FILE = 'stats.json';
 const EVENTS_FILE = 'events.json';
 const ACTIVITIES_FILE = 'activities.json';
 
-// Hàm đọc dữ liệu từ file
 function loadData() {
     try {
         if (fs.existsSync(USERS_FILE)) {
@@ -99,7 +93,6 @@ function loadData() {
     }
 }
 
-// Hàm lưu dữ liệu
 function saveUsers() {
     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
@@ -122,7 +115,6 @@ let userStats = {};
 let userEvents = {};
 let userActivities = {};
 
-// Tạo tài khoản admin mặc định
 const initAdmin = async () => {
     const hashedPassword = await bcrypt.hash('admin123', 10);
     users.push({
@@ -141,10 +133,8 @@ const initAdmin = async () => {
     saveStats();
 };
 
-// Đọc dữ liệu từ file trước
 loadData();
 
-// Nếu chưa có user nào (file trống), tạo admin
 if (users.length === 0) {
     initAdmin();
 } else {
@@ -327,7 +317,7 @@ app.post('/api/upload/avatar', authenticateToken, upload.single('avatar'), (req,
             return res.status(400).json({ error: 'Không có file được upload' });
         }
         
-        const avatarUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+        const avatarUrl = `https://milkcoffee-backend-production.up.railway.app/uploads/${req.file.filename}`;
         
         const userIndex = users.findIndex(u => u.id === req.user.id);
         if (userIndex !== -1) {
@@ -352,7 +342,7 @@ app.post('/api/upload/cover', authenticateToken, upload.single('cover'), (req, r
             return res.status(400).json({ error: 'Không có file được upload' });
         }
         
-        const coverUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+        const coverUrl = `https://milkcoffee-backend-production.up.railway.app/uploads/${req.file.filename}`;
         
         const userIndex = users.findIndex(u => u.id === req.user.id);
         if (userIndex !== -1) {
@@ -525,14 +515,13 @@ app.post('/api/library', authenticateToken, upload.single('file'), (req, res) =>
         }
         
         const { type } = req.body;
-        const fileUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+        const fileUrl = `https://milkcoffee-backend-production.up.railway.app/uploads/${req.file.filename}`;
         
-        // Lưu tên gốc (có dấu) để hiển thị, và tên file đã xử lý để lưu trữ
         const originalName = req.file.originalname;
         
         const newFile = {
             id: Date.now().toString(),
-            name: originalName,           // Tên gốc có dấu để hiển thị
+            name: originalName,
             displayName: originalName,
             type: type,
             filePath: fileUrl,
@@ -559,8 +548,7 @@ app.delete('/api/library/:fileId', authenticateToken, (req, res) => {
     const fileId = req.params.fileId;
     const fileToDelete = libraryFiles.find(f => f.id === fileId);
     if (fileToDelete && fileToDelete.filePath) {
-        // Xóa file vật lý nếu có
-        const filePath = path.join(__dirname, fileToDelete.filePath.replace(`http://localhost:${PORT}`, ''));
+        const filePath = path.join(__dirname, fileToDelete.filePath.replace(`https://milkcoffee-backend-production.up.railway.app`, ''));
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
         }
@@ -583,10 +571,10 @@ app.get('/api/health', (req, res) => {
 
 // ========== KHỞI ĐỘNG SERVER ==========
 app.listen(PORT, () => {
-    console.log(`✅ Server chạy tại http://localhost:${PORT}`);
-    console.log(`📝 Test API: http://localhost:${PORT}/api/test`);
-    console.log(`🔐 Đăng nhập: POST http://localhost:${PORT}/api/auth/login`);
-    console.log(`📝 Đăng ký: POST http://localhost:${PORT}/api/auth/register`);
+    console.log(`✅ Server chạy tại https://milkcoffee-backend-production.up.railway.app`);
+    console.log(`📝 Test API: https://milkcoffee-backend-production.up.railway.app/api/test`);
+    console.log(`🔐 Đăng nhập: POST https://milkcoffee-backend-production.up.railway.app/api/auth/login`);
+    console.log(`📝 Đăng ký: POST https://milkcoffee-backend-production.up.railway.app/api/auth/register`);
     console.log(`👤 Admin: admin / admin123`);
     console.log(`💾 Dữ liệu được lưu trong file: ${USERS_FILE}, ${STATS_FILE}, ${EVENTS_FILE}, ${ACTIVITIES_FILE}`);
 });
