@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "username": "admin",
+    "password": "$2a$10$gjC.w6wTZkuE6hxbGc0lr.htZcqv1VrHc.yJ6WwyiWO1jL3pTUs2u",
+    "displayName": "Quản trị viên",
+    "gender": "Nam",
+    "role": "admin",
+    "avatar": "http://localhost:5000/uploads/1777264236207-565534395_499415972_122207724206142193_9073318553179964005_n.jpg",
+    "cover": "http://localhost:5000/uploads/1777264239453-87321600_543433355_1158556979462356_6184420195505670984_n.jpg",
+    "createdAt": "2026-04-27T03:03:10.204Z"
+  },
+  {
+    "id": 2,
+    "username": "123",
+    "password": "$2a$10$SKZaI3XSijq0eMcJPbLSXOddXIIl//KlXwDL6Nx1.u0BUxCTJPkrW",
+    "displayName": "qqqqqq",
+    "gender": null,
+    "role": "user",
+    "avatar": "http://localhost:5000/uploads/1777262742587-838706145.jpg",
+    "cover": "http://localhost:5000/uploads/1777261779715-42939800.jpg",
+    "createdAt": "2026-04-27T03:05:07.623Z"
+  }
+]
