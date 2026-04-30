@@ -9,14 +9,15 @@ const XLSX = require('xlsx');
 const mammoth = require('mammoth');
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 const JWT_SECRET = 'milkcoffee_secret_key_2025';
 const GEMINI_API_KEY = 'AIzaSyCM417vH6NrezkvKaxvViJfdn-qL70g7o8';
+const BASE_URL = 'https://milkcoffee-backend-production.up.railway.app';
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Tạo thư mục uploads nếu chưa có
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
@@ -140,8 +141,15 @@ app.post('/api/auth/register', async (req, res) => {
         if (password.length < 6) return res.status(400).json({ error: 'Mật khẩu phải có ít nhất 6 ký tự' });
         const hashedPassword = await bcrypt.hash(password, 10);
         const newUser = {
-            id: users.length + 1, username, password: hashedPassword, displayName: displayName || username,
-            gender: null, role: 'user', avatar: null, cover: null, createdAt: new Date().toISOString()
+            id: users.length + 1,
+            username,
+            password: hashedPassword,
+            displayName: displayName || username,
+            gender: null,
+            role: 'user',
+            avatar: null,
+            cover: null,
+            createdAt: new Date().toISOString()
         };
         users.push(newUser);
         userStats[newUser.id] = { score: 0, hours: 0, progress: 0, rank: 100 };
@@ -170,6 +178,7 @@ app.get('/api/users/profile', authenticateToken, (req, res) => {
     res.json({ id: user.id, username: user.username, displayName: user.displayName, gender: user.gender, role: user.role, avatar: user.avatar || null, cover: user.cover || null, createdAt: user.createdAt, stats: userStats[user.id] || { score: 0, hours: 0, progress: 0, rank: 100 } });
 });
 
+// ========== API CẬP NHẬT THÔNG TIN ==========
 app.put('/api/users/profile', authenticateToken, async (req, res) => {
     try {
         const { displayName, gender, currentPassword, newPassword } = req.body;
@@ -192,7 +201,7 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
 app.post('/api/upload/avatar', authenticateToken, upload.single('avatar'), (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: 'Không có file được upload' });
-        const avatarUrl = `https://milkcoffee-backend-production.up.railway.app/uploads/${req.file.filename}`;
+        const avatarUrl = `${BASE_URL}/uploads/${req.file.filename}`;
         const userIndex = users.findIndex(u => u.id === req.user.id);
         if (userIndex !== -1) { users[userIndex].avatar = avatarUrl; saveUsers(); }
         res.json({ success: true, avatarUrl: avatarUrl });
@@ -202,7 +211,7 @@ app.post('/api/upload/avatar', authenticateToken, upload.single('avatar'), (req,
 app.post('/api/upload/cover', authenticateToken, upload.single('cover'), (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: 'Không có file được upload' });
-        const coverUrl = `https://milkcoffee-backend-production.up.railway.app/uploads/${req.file.filename}`;
+        const coverUrl = `${BASE_URL}/uploads/${req.file.filename}`;
         const userIndex = users.findIndex(u => u.id === req.user.id);
         if (userIndex !== -1) { users[userIndex].cover = coverUrl; saveUsers(); }
         res.json({ success: true, coverUrl: coverUrl });
@@ -287,7 +296,7 @@ app.post('/api/library', authenticateToken, upload.single('file'), (req, res) =>
     try {
         if (!req.file) return res.status(400).json({ error: 'Không có file được upload' });
         const { type, grade, subject } = req.body;
-        const fileUrl = `https://milkcoffee-backend-production.up.railway.app/uploads/${req.file.filename}`;
+        const fileUrl = `${BASE_URL}/uploads/${req.file.filename}`;
         const fileExt = path.extname(req.file.originalname).substring(1);
         const subjectColors = { toan: { color: '#1e88e5', color2: '#42a5f5' }, van: { color: '#8e24aa', color2: '#ab47bc' }, anh: { color: '#43a047', color2: '#66bb6a' }, ly: { color: '#fb8c00', color2: '#ffa726' }, hoa: { color: '#e53935', color2: '#ef5350' }, sinh: { color: '#00897b', color2: '#26a69a' }, su: { color: '#6d4c41', color2: '#8d6e63' }, dia: { color: '#546e7a', color2: '#78909c' } };
         const colors = subjectColors[subject] || { color: '#1565C0', color2: '#42a5f5' };
@@ -303,7 +312,7 @@ app.delete('/api/library/:fileId', authenticateToken, (req, res) => {
     const fileId = req.params.fileId;
     const fileToDelete = libraryFiles.find(f => f.id === fileId);
     if (fileToDelete && fileToDelete.filePath) {
-        const filePath = path.join(__dirname, fileToDelete.filePath.replace('https://milkcoffee-backend-production.up.railway.app', ''));
+        const filePath = path.join(__dirname, fileToDelete.filePath.replace(BASE_URL, ''));
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
     libraryFiles = libraryFiles.filter(f => f.id !== fileId);
@@ -326,7 +335,6 @@ async function parseWordDocument(filePath) {
     const lines = text.split('\n').filter(l => l.trim());
     const questions = [];
     let currentQuestion = null;
-    
     for (const line of lines) {
         const trimmed = line.trim();
         if (/^\d+[\.\)]/.test(trimmed)) {
@@ -340,18 +348,15 @@ async function parseWordDocument(filePath) {
     return questions;
 }
 
-// Upload file Excel/Word để tạo đề thi
+// Upload file Excel/Word để tạo đề thi (Admin)
 app.post('/api/admin/upload-exam', authenticateToken, upload.single('examFile'), async (req, res) => {
     try {
         const user = users.find(u => u.id === req.user.id);
         if (user?.role !== 'admin') return res.status(403).json({ error: 'Chỉ admin mới có quyền' });
-        
         const { title, grade, subject, timeLimit, numQuestions } = req.body;
         const file = req.file;
         const fileExt = path.extname(file.originalname).toLowerCase();
-        
         let questions = [];
-        
         if (fileExt === '.xlsx' || fileExt === '.xls') {
             const workbook = XLSX.readFile(file.path);
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -370,9 +375,7 @@ app.post('/api/admin/upload-exam', authenticateToken, upload.single('examFile'),
         } else {
             return res.status(400).json({ error: 'Chỉ hỗ trợ file Excel (.xlsx, .xls) hoặc Word (.docx)' });
         }
-        
         if (questions.length === 0) return res.status(400).json({ error: 'Không tìm thấy câu hỏi trong file' });
-        
         const newExam = {
             id: Date.now().toString(),
             title: title || path.basename(file.originalname, path.extname(file.originalname)),
@@ -384,36 +387,25 @@ app.post('/api/admin/upload-exam', authenticateToken, upload.single('examFile'),
             createdAt: new Date().toISOString(),
             createdBy: req.user.username
         };
-        
         exams.push(newExam);
         saveExams();
-        
         fs.unlinkSync(file.path);
-        
         res.json({ success: true, exam: newExam, totalQuestions: questions.length });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 // Tạo đề thi ngẫu nhiên từ ngân hàng câu hỏi
 app.post('/api/exams/:id/generate', authenticateToken, (req, res) => {
     const exam = exams.find(e => e.id === req.params.id);
     if (!exam) return res.status(404).json({ error: 'Không tìm thấy đề thi' });
-    
     let { numQuestions = exam.numQuestions || 30, timeLimit = exam.timeLimit || 60 } = req.body;
     numQuestions = Math.min(numQuestions, exam.bankQuestions.length);
-    
-    // Xáo trộn câu hỏi
     let shuffledBank = [...exam.bankQuestions];
     for (let i = shuffledBank.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffledBank[i], shuffledBank[j]] = [shuffledBank[j], shuffledBank[i]];
     }
-    
     const selectedQuestions = shuffledBank.slice(0, numQuestions);
-    
-    // Xáo trộn đáp án và câu hỏi
     const finalQuestions = selectedQuestions.map(q => {
         const options = [...q.options];
         for (let i = options.length - 1; i > 0; i--) {
@@ -423,13 +415,10 @@ app.post('/api/exams/:id/generate', authenticateToken, (req, res) => {
         const newCorrect = options.findIndex(opt => opt === q.options[q.correct]);
         return { id: Date.now() + Math.random(), text: q.text, options: options, correct: newCorrect, level: q.level };
     });
-    
-    // Xáo trộn thứ tự câu hỏi
     for (let i = finalQuestions.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [finalQuestions[i], finalQuestions[j]] = [finalQuestions[j], finalQuestions[i]];
     }
-    
     const sessionExam = {
         id: Date.now().toString(),
         examId: exam.id,
@@ -439,10 +428,8 @@ app.post('/api/exams/:id/generate', authenticateToken, (req, res) => {
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + timeLimit * 60 * 1000)
     };
-    
     examSessions[req.user.id] = sessionExam;
     saveExamSessions();
-    
     res.json({ success: true, exam: { id: sessionExam.id, title: sessionExam.title, questions: finalQuestions.map(q => ({ id: q.id, text: q.text, options: q.options })), timeLimit: sessionExam.timeLimit, expiresAt: sessionExam.expiresAt } });
 });
 
@@ -458,57 +445,37 @@ app.post('/api/exams/exit-record', authenticateToken, (req, res) => {
 app.post('/api/exams/:id/submit-full', authenticateToken, (req, res) => {
     const { answers, exitCount } = req.body;
     const session = examSessions[req.user.id];
-    
     if (!session) return res.status(400).json({ error: 'Phiên làm bài không tồn tại' });
-    
     const isExpired = new Date() > new Date(session.expiresAt);
     let correctCount = 0;
     const results = [];
-    
     session.questions.forEach(q => {
         const userAnswer = answers[q.id];
         const isCorrect = userAnswer !== undefined && userAnswer === q.correct;
         if (isCorrect) correctCount++;
-        results.push({
-            id: q.id, text: q.text, options: q.options,
-            correctAnswer: q.options[q.correct],
-            userAnswer: userAnswer !== undefined ? q.options[userAnswer] : 'Chưa trả lời',
-            isCorrect: isCorrect, level: q.level
-        });
+        results.push({ id: q.id, text: q.text, options: q.options, correctAnswer: q.options[q.correct], userAnswer: userAnswer !== undefined ? q.options[userAnswer] : 'Chưa trả lời', isCorrect: isCorrect, level: q.level });
     });
-    
     const score = Math.round((correctCount / session.questions.length) * 10);
     const earnedPoints = score * 10;
-    
     if (!userStats[req.user.id]) userStats[req.user.id] = { score: 0, hours: 0, progress: 0, rank: 100 };
     userStats[req.user.id].score += earnedPoints;
     saveStats();
-    
     if (!userActivities[req.user.id]) userActivities[req.user.id] = [];
     userActivities[req.user.id].unshift({ id: Date.now(), title: `Hoàn thành đề thi: ${session.title}`, score: earnedPoints, time: new Date().toISOString() });
     saveActivities();
-    
     if (!examResults[req.user.id]) examResults[req.user.id] = [];
-    examResults[req.user.id].unshift({
-        examId: session.examId, examTitle: session.title, score: score, correctCount: correctCount,
-        totalQuestions: session.questions.length, results: results, exitCount: exitCount || 0,
-        completedAt: new Date().toISOString(), isExpired: isExpired
-    });
+    examResults[req.user.id].unshift({ examId: session.examId, examTitle: session.title, score: score, correctCount: correctCount, totalQuestions: session.questions.length, results: results, exitCount: exitCount || 0, completedAt: new Date().toISOString(), isExpired: isExpired });
     if (examResults[req.user.id].length > 50) examResults[req.user.id] = examResults[req.user.id].slice(0, 50);
     saveExamResults();
-    
-    const userExitCount = examExits[req.user.id] || 0;
     delete examSessions[req.user.id];
     saveExamSessions();
-    
-    res.json({ success: true, score: score, correctCount: correctCount, totalQuestions: session.questions.length, results: results, exitCount: exitCount || userExitCount, isExpired: isExpired, message: `Bạn đạt ${score}/10 điểm! +${earnedPoints} điểm tích lũy` });
+    res.json({ success: true, score: score, correctCount: correctCount, totalQuestions: session.questions.length, results: results, exitCount: exitCount || 0, isExpired: isExpired, message: `Bạn đạt ${score}/10 điểm! +${earnedPoints} điểm tích lũy` });
 });
 
 // API AI giải thích câu hỏi
 app.post('/api/ai/explain', authenticateToken, async (req, res) => {
     const { questionText, correctAnswer, userAnswer, options } = req.body;
     const prompt = `Bạn là giáo viên dạy giỏi. Hãy giải thích câu hỏi trắc nghiệm sau:\n\nCâu hỏi: ${questionText}\nCác đáp án:\nA. ${options[0]}\nB. ${options[1]}\nC. ${options[2]}\nD. ${options[3]}\n\nĐáp án đúng là: ${correctAnswer}\nHọc sinh chọn: ${userAnswer || 'Chưa chọn đáp án'}\n\nHãy giải thích:\n1. Tại sao đáp án đúng lại đúng\n2. Nếu học sinh chọn sai, hãy giải thích tại sao sai\n3. Cung cấp kiến thức cần nhớ`;
-    
     try {
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -529,11 +496,7 @@ app.get('/api/exams/results/history', authenticateToken, (req, res) => { res.jso
 app.get('/api/admin/stats', authenticateToken, (req, res) => {
     const admin = users.find(u => u.id === req.user.id);
     if (admin?.role !== 'admin') return res.status(403).json({ error: 'Không có quyền truy cập' });
-    res.json({
-        totalUsers: users.length, totalExams: exams.length,
-        totalLibraryFiles: libraryFiles.length,
-        topUsers: Object.entries(userStats).map(([userId, stats]) => ({ userId: parseInt(userId), username: users.find(u => u.id == userId)?.username || 'Unknown', displayName: users.find(u => u.id == userId)?.displayName || 'Unknown', score: stats.score })).sort((a, b) => b.score - a.score).slice(0, 10)
-    });
+    res.json({ totalUsers: users.length, totalExams: exams.length, totalLibraryFiles: libraryFiles.length, topUsers: Object.entries(userStats).map(([userId, stats]) => ({ userId: parseInt(userId), username: users.find(u => u.id == userId)?.username || 'Unknown', displayName: users.find(u => u.id == userId)?.displayName || 'Unknown', score: stats.score })).sort((a, b) => b.score - a.score).slice(0, 10) });
 });
 
 // API test
@@ -542,10 +505,9 @@ app.get('/api/health', (req, res) => { res.json({ status: 'OK', timestamp: new D
 
 // ========== KHỞI ĐỘNG SERVER ==========
 app.listen(PORT, () => {
-    console.log(`✅ Server chạy tại http://localhost:${PORT}`);
-    console.log(`📝 Test API: http://localhost:${PORT}/api/test`);
-    console.log(`🔐 Đăng nhập: POST http://localhost:${PORT}/api/auth/login`);
+    console.log(`✅ Server chạy tại ${BASE_URL}`);
+    console.log(`📝 Test API: ${BASE_URL}/api/test`);
+    console.log(`🔐 Đăng nhập: POST ${BASE_URL}/api/auth/login`);
     console.log(`👤 Admin: admin / admin123`);
-    console.log(`📁 Upload file đề thi: POST /api/admin/upload-exam (admin only)`);
-    console.log(`💾 Dữ liệu được lưu trong file JSON`);
+    console.log(`📁 Upload file đề thi: POST ${BASE_URL}/api/admin/upload-exam (admin only)`);
 });
