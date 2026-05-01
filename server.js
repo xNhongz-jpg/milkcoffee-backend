@@ -10,9 +10,38 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'milkcoffee_secret_key_2025';
 
+// ========== CẤU HÌNH CORS - CHO PHÉP VERCEL GỌI API ==========
+const allowedOrigins = [
+    'https://milkcoffee-frontend.vercel.app',
+    'https://milkcoffee-frontend-git-main.vercel.app',
+    'http://localhost:5000',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
+    'http://localhost:3000'
+];
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // Cho phép request không có origin (như từ Postman, mobile app)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.log('Origin blocked:', origin);
+            callback(null, true); // Tạm thời cho phép tất cả để debug
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
+}));
+
+// Xử lý preflight request OPTIONS
+app.options('*', cors());
+
 // Middleware
-app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static('uploads'));
 
 // ========== CẤU HÌNH UPLOAD FILE ==========
@@ -77,6 +106,8 @@ app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, password, displayName } = req.body;
 
+        console.log('Register attempt:', { username, displayName });
+
         if (!username || !password) {
             return res.status(400).json({ error: 'Vui lòng nhập đầy đủ thông tin' });
         }
@@ -106,10 +137,10 @@ app.post('/api/auth/register', async (req, res) => {
         };
 
         users.push(newUser);
-
-        // Khởi tạo stats cho user
         userStats[newUser.id] = { score: 0, hours: 0, progress: 0, rank: 100 };
         userEvents[newUser.id] = [];
+
+        console.log('User created:', newUser.username);
 
         res.json({ 
             success: true, 
@@ -127,6 +158,8 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;
+
+        console.log('Login attempt:', { username });
 
         if (!username || !password) {
             return res.status(400).json({ error: 'Vui lòng nhập tên đăng nhập và mật khẩu' });
@@ -149,6 +182,8 @@ app.post('/api/auth/login', async (req, res) => {
             { expiresIn: '7d' }
         );
 
+        console.log('Login success:', username);
+
         res.json({
             success: true,
             token,
@@ -159,7 +194,8 @@ app.post('/api/auth/login', async (req, res) => {
                 gender: user.gender,
                 role: user.role,
                 avatar: user.avatar,
-                cover: user.cover
+                cover: user.cover,
+                stats: userStats[user.id] || { score: 0, hours: 0, progress: 0, rank: 100 }
             }
         });
 
@@ -180,6 +216,7 @@ const authenticateToken = (req, res, next) => {
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) {
+            console.error('Token verify error:', err.message);
             return res.status(403).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
         }
         req.user = user;
@@ -239,6 +276,10 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
                 userStats[req.user.id] = { score: 0, hours: 0, progress: 0, rank: 100 };
             }
             userStats[req.user.id].score += score;
+            // Cập nhật progress (ví dụ: 1000 điểm = 100%)
+            userStats[req.user.id].progress = Math.min(100, Math.floor(userStats[req.user.id].score / 10));
+            // Cập nhật rank
+            userStats[req.user.id].rank = Math.max(1, 101 - Math.floor(userStats[req.user.id].score / 100));
         }
 
         res.json({
@@ -267,11 +308,11 @@ app.post('/api/upload/avatar', authenticateToken, upload.single('avatar'), (req,
         }
 
         const avatarUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+        console.log('Upload avatar:', avatarUrl);
 
-        // Cập nhật URL avatar vào user
         const userIndex = users.findIndex(u => u.id === req.user.id);
         if (userIndex !== -1) {
-            // Xóa file avatar cũ nếu có (tùy chọn)
+            // Xóa file avatar cũ nếu có
             if (users[userIndex].avatar) {
                 const oldFileName = users[userIndex].avatar.split('/').pop();
                 const oldFilePath = path.join(__dirname, 'uploads', oldFileName);
@@ -301,11 +342,10 @@ app.post('/api/upload/cover', authenticateToken, upload.single('cover'), (req, r
         }
 
         const coverUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+        console.log('Upload cover:', coverUrl);
 
-        // Cập nhật URL cover vào user
         const userIndex = users.findIndex(u => u.id === req.user.id);
         if (userIndex !== -1) {
-            // Xóa file cover cũ nếu có
             if (users[userIndex].cover) {
                 const oldFileName = users[userIndex].cover.split('/').pop();
                 const oldFilePath = path.join(__dirname, 'uploads', oldFileName);
@@ -367,23 +407,16 @@ app.delete('/api/events/:eventId', authenticateToken, (req, res) => {
     res.json({ success: true });
 });
 
-// ========== API HOẠT ĐỘNG (Cập nhật điểm) ==========
+// ========== API HOẠT ĐỘNG ==========
 app.post('/api/activities', authenticateToken, (req, res) => {
     const { title, score } = req.body;
 
-    // Khởi tạo stats nếu chưa có
     if (!userStats[req.user.id]) {
         userStats[req.user.id] = { score: 0, hours: 0, progress: 0, rank: 100 };
     }
     
-    // Cộng điểm
     userStats[req.user.id].score += score;
-    
-    // Cập nhật progress (ví dụ: 1000 điểm = 100%)
-    const progress = Math.min(100, Math.floor(userStats[req.user.id].score / 10));
-    userStats[req.user.id].progress = progress;
-    
-    // Cập nhật rank (giả lập, có thể tính sau)
+    userStats[req.user.id].progress = Math.min(100, Math.floor(userStats[req.user.id].score / 10));
     userStats[req.user.id].rank = Math.max(1, 101 - Math.floor(userStats[req.user.id].score / 100));
 
     res.json({ 
@@ -393,9 +426,8 @@ app.post('/api/activities', authenticateToken, (req, res) => {
     });
 });
 
-// ========== API LẤY DANH SÁCH HOẠT ĐỘNG ==========
 app.get('/api/activities', authenticateToken, (req, res) => {
-    // Trả về danh sách hoạt động mẫu (có thể lưu thêm vào database sau)
+    // Trả về danh sách hoạt động mẫu
     const sampleActivities = [
         { id: 1, title: 'Chào mừng bạn đến với Milk Coffee!', score: 0, time: new Date().toISOString() }
     ];
@@ -432,11 +464,7 @@ app.post('/api/library', authenticateToken, upload.single('file'), (req, res) =>
         };
 
         libraryFiles.push(newFile);
-
-        res.json({ 
-            success: true, 
-            file: newFile 
-        });
+        res.json({ success: true, file: newFile });
 
     } catch (error) {
         console.error('Upload library error:', error);
@@ -446,14 +474,12 @@ app.post('/api/library', authenticateToken, upload.single('file'), (req, res) =>
 
 app.delete('/api/library/:fileId', authenticateToken, (req, res) => {
     const fileId = req.params.fileId;
-
-    // Kiểm tra quyền admin
     const user = users.find(u => u.id === req.user.id);
+
     if (user?.role !== 'admin') {
         return res.status(403).json({ error: 'Chỉ admin mới có quyền xóa' });
     }
 
-    // Tìm và xóa file vật lý nếu có
     const fileToDelete = libraryFiles.find(f => f.id === fileId);
     if (fileToDelete && fileToDelete.filePath) {
         const fileName = fileToDelete.filePath.split('/').pop();
@@ -467,7 +493,7 @@ app.delete('/api/library/:fileId', authenticateToken, (req, res) => {
     res.json({ success: true });
 });
 
-// ========== API ADMIN: LẤY DANH SÁCH USER ==========
+// ========== API ADMIN ==========
 app.get('/api/admin/users', authenticateToken, (req, res) => {
     const user = users.find(u => u.id === req.user.id);
     if (user?.role !== 'admin') {
@@ -496,7 +522,6 @@ app.delete('/api/admin/users/:userId', authenticateToken, (req, res) => {
 
     const userId = parseInt(req.params.userId);
     
-    // Không cho xóa chính mình
     if (userId === req.user.id) {
         return res.status(400).json({ error: 'Không thể xóa tài khoản đang đăng nhập' });
     }
@@ -517,7 +542,6 @@ app.delete('/api/admin/users/:userId', authenticateToken, (req, res) => {
     res.json({ success: true });
 });
 
-// ========== API ADMIN: CẬP NHẬT USER ==========
 app.put('/api/admin/users/:userId', authenticateToken, async (req, res) => {
     const adminUser = users.find(u => u.id === req.user.id);
     if (adminUser?.role !== 'admin') {
@@ -556,4 +580,6 @@ app.listen(PORT, () => {
     console.log(`🚀 Server chạy tại http://localhost:${PORT}`);
     console.log(`📝 Test API: http://localhost:${PORT}/api/test`);
     console.log(`💚 Health check: http://localhost:${PORT}/api/health`);
+    console.log(`🔐 Login API: POST http://localhost:${PORT}/api/auth/login`);
+    console.log(`📝 Register API: POST http://localhost:${PORT}/api/auth/register`);
 });
